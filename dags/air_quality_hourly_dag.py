@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import sys
 
@@ -18,6 +18,10 @@ from air_quality.current_collector import collect_current_air_quality
 from air_quality.validation import validate_clean_csv
 from air_quality.warehouse_loader import load_warehouse
 
+default_args = {
+    "retries": 2,
+    "retry_delay": timedelta(minutes=5),
+}
 
 with DAG(
     dag_id="air_quality_hourly_pipeline",
@@ -25,6 +29,7 @@ with DAG(
     schedule="@hourly",
     start_date=datetime(2026, 1, 1),
     catchup=False,
+    default_args=default_args,
     tags=["air-quality", "aqi", "warehouse"],
 ) as dag:
 
