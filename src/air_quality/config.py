@@ -17,3 +17,12 @@ def get_openweather_api_key() -> str:
         raise RuntimeError("OPENWEATHER_API_KEY is missing from the .env file")
 
     return api_key
+
+
+def get_database_url() -> str:
+    database_url = os.getenv("DATABASE_URL")
+
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is missing from the .env file")
+
+    return database_url
