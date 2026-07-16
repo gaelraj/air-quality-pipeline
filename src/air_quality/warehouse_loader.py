@@ -99,8 +99,11 @@ def upsert_time(cursor, observed_at_utc) -> int:
     return cursor.fetchone()[0]
 
 
-def upsert_fact(cursor, row, city_id: int, time_id: int, observed_at_utc) -> None:
-    ingested_at_utc = pd.to_datetime(row["ingested_at_utc"], utc=True).to_pydatetime()
+def upsert_fact(cursor, row, city_id: int, time_id: int) -> None:
+    ingested_at_utc = pd.to_datetime(
+        row["ingested_at_utc"],
+        utc=True,
+    ).to_pydatetime()
 
     cursor.execute(
         """
@@ -156,12 +159,21 @@ def load_warehouse() -> None:
     if not CLEAN_FILE.exists():
         raise FileNotFoundError(f"Clean file not found: {CLEAN_FILE}")
 
+    print(f"Reading clean file: {CLEAN_FILE}")
+
     df = pd.read_csv(CLEAN_FILE)
     database_url = get_database_url()
 
+    print(f"Starting warehouse load: {len(df)} rows")
+
     with psycopg.connect(database_url) as connection:
+        print("Database connection opened")
+
         with connection.cursor() as cursor:
-            for _, row in df.iterrows():
+            for row_number, (_, row) in enumerate(df.iterrows(), start=1):
+                if row_number == 1 or row_number % 10 == 0:
+                    print(f"Processing row {row_number}/{len(df)}")
+
                 observed_at_utc = pd.to_datetime(
                     row["observed_at_utc"],
                     utc=True,
@@ -175,9 +187,9 @@ def load_warehouse() -> None:
                     row=row,
                     city_id=city_id,
                     time_id=time_id,
-                    observed_at_utc=observed_at_utc,
                 )
 
         connection.commit()
+        print("Database transaction committed")
 
     print(f"Warehouse loaded successfully: {len(df)} rows processed")
