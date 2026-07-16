@@ -26,3 +26,16 @@ def get_database_url() -> str:
         raise RuntimeError("DATABASE_URL is missing from the .env file")
 
     return database_url
+
+def get_openweather_current_url() -> str:
+    return os.getenv(
+        "OPENWEATHER_CURRENT_URL",
+        "https://api.openweathermap.org/data/2.5/air_pollution",
+    )
+
+
+def get_openweather_history_url() -> str:
+    return os.getenv(
+        "OPENWEATHER_HISTORY_URL",
+        "https://api.openweathermap.org/data/2.5/air_pollution/history",
+    )
