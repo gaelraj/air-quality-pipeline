@@ -38,46 +38,59 @@ def round_to_hour(timestamp: int) -> str:
     return rounded_dt.isoformat()
 
 
-def extract_row(raw_payload: dict[str, Any]) -> dict[str, Any]:
+def extract_rows(raw_payload: dict[str, Any]) -> list[dict[str, Any]]:
     metadata = raw_payload["metadata"]
     api_response = raw_payload["api_response"]
 
-    measurement = api_response["list"][0]
-    components = measurement["components"]
+    rows = []
 
-    return {
-        "city_name": metadata["city_name"],
-        "country": metadata["country"],
-        "latitude": metadata["latitude"],
-        "longitude": metadata["longitude"],
-        "observed_at_utc": round_to_hour(measurement["dt"]),
-        "aqi": measurement["main"]["aqi"],
-        "co": components.get("co"),
-        "no": components.get("no"),
-        "no2": components.get("no2"),
-        "o3": components.get("o3"),
-        "so2": components.get("so2"),
-        "pm2_5": components.get("pm2_5"),
-        "pm10": components.get("pm10"),
-        "nh3": components.get("nh3"),
-        "source": metadata["source"],
-        "ingested_at_utc": metadata["collected_at_utc"],
-    }
+    for measurement in api_response["list"]:
+        components = measurement["components"]
+
+        rows.append(
+            {
+                "city_name": metadata["city_name"],
+                "country": metadata["country"],
+                "latitude": metadata["latitude"],
+                "longitude": metadata["longitude"],
+                "observed_at_utc": round_to_hour(measurement["dt"]),
+                "aqi": measurement["main"]["aqi"],
+                "co": components.get("co"),
+                "no": components.get("no"),
+                "no2": components.get("no2"),
+                "o3": components.get("o3"),
+                "so2": components.get("so2"),
+                "pm2_5": components.get("pm2_5"),
+                "pm10": components.get("pm10"),
+                "nh3": components.get("nh3"),
+                "source": metadata["source"],
+                "ingested_at_utc": metadata["collected_at_utc"],
+            }
+        )
+
+    return rows
 
 
 def rebuild_clean_csv() -> Path:
     rows = []
 
-    for raw_file in RAW_DIR.glob("city=*/*.json"):
+    for raw_file in sorted(RAW_DIR.glob("city=*/*.json")):
         with raw_file.open("r", encoding="utf-8") as file:
             raw_payload = json.load(file)
 
-        rows.append(extract_row(raw_payload))
+        rows.extend(extract_rows(raw_payload))
 
     if not rows:
         raise RuntimeError("No raw files found. Run collect_current.py first.")
 
     df = pd.DataFrame(rows, columns=CLEAN_COLUMNS)
+
+    df["observed_at_utc"] = pd.to_datetime(df["observed_at_utc"], utc=True)
+    df["ingested_at_utc"] = pd.to_datetime(df["ingested_at_utc"], utc=True)
+
+    df = df.sort_values(
+        by=["observed_at_utc", "city_name", "ingested_at_utc"],
+    )
 
     df = df.drop_duplicates(
         subset=["city_name", "observed_at_utc"],
