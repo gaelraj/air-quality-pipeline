@@ -179,6 +179,7 @@ def load_warehouse() -> None:
     )
 
     database_url = get_database_url()
+    current_utc_hour = pd.Timestamp.now(tz="UTC").floor("h")
 
     with psycopg.connect(database_url) as connection:
         print("Database connection opened")
@@ -187,13 +188,26 @@ def load_warehouse() -> None:
             latest_observation = get_latest_observation(cursor)
 
             if latest_observation is None:
-                rows_to_load = df.copy()
-                print("Warehouse is empty: loading the complete clean file")
+                rows_to_load = df[
+                    df["observed_at_utc"] <= current_utc_hour
+                ].copy()
+
+                print(
+                    "Warehouse is empty: loading all available "
+                    "observations up to the current UTC hour"
+                )
             else:
                 latest_observation = pd.Timestamp(latest_observation)
 
                 rows_to_load = df[
-                    df["observed_at_utc"] >= latest_observation
+                    (
+                        df["observed_at_utc"]
+                        >= latest_observation
+                    )
+                    & (
+                        df["observed_at_utc"]
+                        <= current_utc_hour
+                    )
                 ].copy()
 
                 print(
@@ -201,8 +215,9 @@ def load_warehouse() -> None:
                     latest_observation,
                 )
 
+            print("Current UTC hour:", current_utc_hour)
             print(
-                f"Starting incremental warehouse load: "
+                "Starting incremental warehouse load: "
                 f"{len(rows_to_load)} rows"
             )
 
