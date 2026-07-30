@@ -155,6 +155,17 @@ def upsert_fact(cursor, row, city_id: int, time_id: int) -> None:
     )
 
 
+def get_latest_observation(cursor):
+    cursor.execute(
+        """
+        SELECT MAX(t.observed_at_utc)
+        FROM fact_air_quality f
+        JOIN dim_time t ON t.time_id = f.time_id;
+        """
+    )
+
+    return cursor.fetchone()[0]
+
 def load_warehouse() -> None:
     if not CLEAN_FILE.exists():
         raise FileNotFoundError(f"Clean file not found: {CLEAN_FILE}")
@@ -162,22 +173,56 @@ def load_warehouse() -> None:
     print(f"Reading clean file: {CLEAN_FILE}")
 
     df = pd.read_csv(CLEAN_FILE)
-    database_url = get_database_url()
+    df["observed_at_utc"] = pd.to_datetime(
+        df["observed_at_utc"],
+        utc=True,
+    )
 
-    print(f"Starting warehouse load: {len(df)} rows")
+    database_url = get_database_url()
 
     with psycopg.connect(database_url) as connection:
         print("Database connection opened")
 
         with connection.cursor() as cursor:
-            for row_number, (_, row) in enumerate(df.iterrows(), start=1):
-                if row_number == 1 or row_number % 10 == 0:
-                    print(f"Processing row {row_number}/{len(df)}")
+            latest_observation = get_latest_observation(cursor)
 
-                observed_at_utc = pd.to_datetime(
-                    row["observed_at_utc"],
-                    utc=True,
-                ).to_pydatetime()
+            if latest_observation is None:
+                rows_to_load = df.copy()
+                print("Warehouse is empty: loading the complete clean file")
+            else:
+                latest_observation = pd.Timestamp(latest_observation)
+
+                rows_to_load = df[
+                    df["observed_at_utc"] >= latest_observation
+                ].copy()
+
+                print(
+                    "Latest warehouse observation:",
+                    latest_observation,
+                )
+
+            print(
+                f"Starting incremental warehouse load: "
+                f"{len(rows_to_load)} rows"
+            )
+
+            if rows_to_load.empty:
+                print("No new warehouse observations to load")
+                return
+
+            for row_number, (_, row) in enumerate(
+                rows_to_load.iterrows(),
+                start=1,
+            ):
+                if row_number == 1 or row_number % 10 == 0:
+                    print(
+                        f"Processing row "
+                        f"{row_number}/{len(rows_to_load)}"
+                    )
+
+                observed_at_utc = row[
+                    "observed_at_utc"
+                ].to_pydatetime()
 
                 city_id = upsert_city(cursor, row)
                 time_id = upsert_time(cursor, observed_at_utc)
@@ -192,4 +237,7 @@ def load_warehouse() -> None:
         connection.commit()
         print("Database transaction committed")
 
-    print(f"Warehouse loaded successfully: {len(df)} rows processed")
+    print(
+        "Warehouse loaded successfully: "
+        f"{len(rows_to_load)} rows processed"
+    )
